@@ -116,7 +116,7 @@ EXTRACTED=0
 mkdir -p "$ISO_MOUNT"
 
 if mount -o loop "$ISO_FILE" "$ISO_MOUNT" 2>/dev/null; then
-    cp -a "$ISO_MOUNT"/. "$EXTRACT_DIR/" 2>/dev/null || true
+    (cd "$ISO_MOUNT" && tar -cf - .) | (cd "$EXTRACT_DIR" && tar -xf -) 2>/dev/null || true
     umount "$ISO_MOUNT"
     EXTRACTED=1
 elif command -v 7z >/dev/null 2>&1; then
@@ -137,30 +137,33 @@ if [ "$EXTRACTED" -eq 0 ]; then
 fi
 
 echo "Preserving existing bootloader configurations if present..."
-[ -f "$BOOT_PART/syslinux.cfg" ] && cp -a "$BOOT_PART/syslinux.cfg" "$STAGING_DIR/syslinux.cfg.bak"
-[ -f "$BOOT_PART/boot/syslinux/syslinux.cfg" ] && cp -a "$BOOT_PART/boot/syslinux/syslinux.cfg" "$STAGING_DIR/syslinux_boot.cfg.bak"
+[ -f "$BOOT_PART/syslinux.cfg" ] && cp -f "$BOOT_PART/syslinux.cfg" "$STAGING_DIR/syslinux.cfg.bak"
+[ -f "$BOOT_PART/boot/syslinux/syslinux.cfg" ] && cp -f "$BOOT_PART/boot/syslinux/syslinux.cfg" "$STAGING_DIR/syslinux_boot.cfg.bak"
+
+# Helper function to safely copy directory trees into existing destination directories using tar
+safe_copy_dir() {
+    src="$1"
+    dst="$2"
+    if [ -d "$src" ]; then
+        [ -d "$dst" ] || mkdir -p "$dst"
+        (cd "$src" && tar -cf - .) | (cd "$dst" && tar -xf -)
+    fi
+}
 
 echo "Updating boot package cache (apks)..."
-if [ -d "$EXTRACT_DIR/apks" ]; then
-    mkdir -p "$BOOT_PART/apks"
-    cp -a "$EXTRACT_DIR/apks"/. "$BOOT_PART/apks/"
-fi
+safe_copy_dir "$EXTRACT_DIR/apks" "$BOOT_PART/apks"
 
 echo "Updating boot kernel and initramfs files..."
-if [ -d "$EXTRACT_DIR/boot" ]; then
-    mkdir -p "$BOOT_PART/boot"
-    cp -a "$EXTRACT_DIR/boot"/. "$BOOT_PART/boot/"
-fi
+safe_copy_dir "$EXTRACT_DIR/boot" "$BOOT_PART/boot"
 
+echo "Updating EFI boot files..."
 if [ -d "$EXTRACT_DIR/EFI" ]; then
-    mkdir -p "$BOOT_PART/EFI"
-    cp -a "$EXTRACT_DIR/EFI"/. "$BOOT_PART/EFI/"
+    safe_copy_dir "$EXTRACT_DIR/EFI" "$BOOT_PART/EFI"
 elif [ -d "$EXTRACT_DIR/efi" ]; then
-    mkdir -p "$BOOT_PART/EFI"
-    cp -a "$EXTRACT_DIR/efi"/. "$BOOT_PART/EFI/"
+    safe_copy_dir "$EXTRACT_DIR/efi" "$BOOT_PART/EFI"
 fi
 
-# Copy any additional directories from extracted ISO
+# Copy any additional directories from extracted ISO safely
 for dir in "$EXTRACT_DIR"/*/; do
     [ -d "$dir" ] || continue
     dname=$(basename "$dir")
@@ -169,8 +172,7 @@ for dir in "$EXTRACT_DIR"/*/; do
             continue
             ;;
         *)
-            mkdir -p "$BOOT_PART/$dname"
-            cp -a "$dir". "$BOOT_PART/$dname/"
+            safe_copy_dir "$dir" "$BOOT_PART/$dname"
             ;;
     esac
 done
@@ -180,12 +182,12 @@ for file in "$EXTRACT_DIR"/* "$EXTRACT_DIR"/.*; do
     [ -f "$file" ] || continue
     fname=$(basename "$file")
     [ "$fname" = "." ] || [ "$fname" = ".." ] && continue
-    cp -a "$file" "$BOOT_PART/"
+    cp -f "$file" "$BOOT_PART/"
 done
 
 echo "Restoring preserved bootloader configurations..."
-[ -f "$STAGING_DIR/syslinux.cfg.bak" ] && cp -a "$STAGING_DIR/syslinux.cfg.bak" "$BOOT_PART/syslinux.cfg"
-[ -f "$STAGING_DIR/syslinux_boot.cfg.bak" ] && cp -a "$STAGING_DIR/syslinux_boot.cfg.bak" "$BOOT_PART/boot/syslinux/syslinux.cfg"
+[ -f "$STAGING_DIR/syslinux.cfg.bak" ] && cp -f "$STAGING_DIR/syslinux.cfg.bak" "$BOOT_PART/syslinux.cfg"
+[ -f "$STAGING_DIR/syslinux_boot.cfg.bak" ] && cp -f "$STAGING_DIR/syslinux_boot.cfg.bak" "$BOOT_PART/boot/syslinux/syslinux.cfg"
 
 echo "Cleaning up staging directory..."
 rm -rf "$STAGING_DIR"

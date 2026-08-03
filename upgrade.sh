@@ -52,7 +52,7 @@ echo "Detecting boot partition..."
 BOOT_PART=""
 
 for dir in /media/* /boot; do
-    if [ -d "$dir" ] && { [ -f "$dir/.alpine-release" ] || [ -f "$dir/syslinux.cfg" ] || [ -d "$dir/boot/syslinux" ] || [ -d "$dir/EFI/boot" ] || [ -f "$dir/boot/vmlinuz-lts" ] || [ -f "$dir/boot/vmlinuz-virt" ] || [ -d "$dir/apks" ]; }; then
+    if [ -d "$dir" ] && { [ -f "$dir/.alpine-release" ] || [ -f "$dir/syslinux.cfg" ] || [ -d "$dir/boot/syslinux" ] || [ -d "$dir/EFI/boot" ] || [ -d "$dir/efi/boot" ] || [ -f "$dir/boot/vmlinuz-lts" ] || [ -f "$dir/boot/vmlinuz-virt" ] || [ -d "$dir/apks" ]; }; then
         BOOT_PART="$dir"
         break
     fi
@@ -116,7 +116,7 @@ EXTRACTED=0
 mkdir -p "$ISO_MOUNT"
 
 if mount -o loop "$ISO_FILE" "$ISO_MOUNT" 2>/dev/null; then
-    cp -a "$ISO_MOUNT"/* "$ISO_MOUNT"/.* "$EXTRACT_DIR/" 2>/dev/null || true
+    cp -a "$ISO_MOUNT"/. "$EXTRACT_DIR/" 2>/dev/null || true
     umount "$ISO_MOUNT"
     EXTRACTED=1
 elif command -v 7z >/dev/null 2>&1; then
@@ -142,20 +142,38 @@ echo "Preserving existing bootloader configurations if present..."
 
 echo "Updating boot package cache (apks)..."
 if [ -d "$EXTRACT_DIR/apks" ]; then
-    rm -rf "$BOOT_PART/apks"
-    cp -a "$EXTRACT_DIR/apks" "$BOOT_PART/"
+    mkdir -p "$BOOT_PART/apks"
+    cp -a "$EXTRACT_DIR/apks"/. "$BOOT_PART/apks/"
 fi
 
 echo "Updating boot kernel and initramfs files..."
 if [ -d "$EXTRACT_DIR/boot" ]; then
     mkdir -p "$BOOT_PART/boot"
-    cp -a "$EXTRACT_DIR/boot"/* "$BOOT_PART/boot/"
+    cp -a "$EXTRACT_DIR/boot"/. "$BOOT_PART/boot/"
 fi
 
 if [ -d "$EXTRACT_DIR/EFI" ]; then
-    rm -rf "$BOOT_PART/EFI"
-    cp -a "$EXTRACT_DIR/EFI" "$BOOT_PART/"
+    mkdir -p "$BOOT_PART/EFI"
+    cp -a "$EXTRACT_DIR/EFI"/. "$BOOT_PART/EFI/"
+elif [ -d "$EXTRACT_DIR/efi" ]; then
+    mkdir -p "$BOOT_PART/EFI"
+    cp -a "$EXTRACT_DIR/efi"/. "$BOOT_PART/EFI/"
 fi
+
+# Copy any additional directories from extracted ISO
+for dir in "$EXTRACT_DIR"/*/; do
+    [ -d "$dir" ] || continue
+    dname=$(basename "$dir")
+    case "$dname" in
+        apks|boot|EFI|efi|upgrade_staging|iso_mnt|extracted)
+            continue
+            ;;
+        *)
+            mkdir -p "$BOOT_PART/$dname"
+            cp -a "$dir". "$BOOT_PART/$dname/"
+            ;;
+    esac
+done
 
 echo "Updating root release files..."
 for file in "$EXTRACT_DIR"/* "$EXTRACT_DIR"/.*; do

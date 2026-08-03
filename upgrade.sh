@@ -160,7 +160,7 @@ echo "Updating EFI boot files..."
 if [ -d "$EXTRACT_DIR/EFI" ]; then
     safe_copy_dir "$EXTRACT_DIR/EFI" "$BOOT_PART/EFI"
 elif [ -d "$EXTRACT_DIR/efi" ]; then
-    safe_copy_dir "$EXTRACT_DIR/efi" "$BOOT_PART/EFI"
+    safe_copy_dir "$EXTRACT_DIR/efi" "$BOOT_PART/efi"
 fi
 
 # Copy any additional directories from extracted ISO safely

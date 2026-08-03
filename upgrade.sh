@@ -140,27 +140,54 @@ echo "Preserving existing bootloader configurations if present..."
 [ -f "$BOOT_PART/syslinux.cfg" ] && cp -f "$BOOT_PART/syslinux.cfg" "$STAGING_DIR/syslinux.cfg.bak"
 [ -f "$BOOT_PART/boot/syslinux/syslinux.cfg" ] && cp -f "$BOOT_PART/boot/syslinux/syslinux.cfg" "$STAGING_DIR/syslinux_boot.cfg.bak"
 
+# Helper function to find existing directory matching target_name case-insensitively on VFAT/FAT32
+find_dir_case() {
+    parent="$1"
+    target_name="$2"
+    existing=""
+    target_lower=$(echo "$target_name" | tr '[:upper:]' '[:lower:]')
+    
+    for item in "$parent"/* "$parent"/.*; do
+        if [ -d "$item" ]; then
+            base=$(basename "$item")
+            base_lower=$(echo "$base" | tr '[:upper:]' '[:lower:]')
+            if [ "$base_lower" = "$target_lower" ]; then
+                existing="$item"
+                break
+            fi
+        fi
+    done
+    
+    if [ -n "$existing" ]; then
+        echo "$existing"
+    else
+        echo "$parent/$target_name"
+    fi
+}
+
 # Helper function to safely copy directory trees into existing destination directories using tar
 safe_copy_dir() {
     src="$1"
-    dst="$2"
+    parent="$2"
+    target_name="$3"
     if [ -d "$src" ]; then
+        dst=$(find_dir_case "$parent" "$target_name")
         [ -d "$dst" ] || mkdir -p "$dst"
         (cd "$src" && tar -cf - .) | (cd "$dst" && tar -xf -)
     fi
 }
 
 echo "Updating boot package cache (apks)..."
-safe_copy_dir "$EXTRACT_DIR/apks" "$BOOT_PART/apks"
+safe_copy_dir "$EXTRACT_DIR/apks" "$BOOT_PART" "apks"
 
 echo "Updating boot kernel and initramfs files..."
-safe_copy_dir "$EXTRACT_DIR/boot" "$BOOT_PART/boot"
+safe_copy_dir "$EXTRACT_DIR/boot" "$BOOT_PART" "boot"
 
 echo "Updating EFI boot files..."
 if [ -d "$EXTRACT_DIR/EFI" ]; then
-    safe_copy_dir "$EXTRACT_DIR/EFI" "$BOOT_PART/EFI"
+    safe_copy_dir "$EXTRACT_DIR/EFI" "$BOOT_PART" "EFI"
 elif [ -d "$EXTRACT_DIR/efi" ]; then
-    safe_copy_dir "$EXTRACT_DIR/efi" "$BOOT_PART/efi"
+    safe_copy_dir "$EXTRACT_DIR/efi" "$BOOT_PART" "EFI"
 fi
 
 # Copy any additional directories from extracted ISO safely
@@ -172,7 +199,7 @@ for dir in "$EXTRACT_DIR"/*/; do
             continue
             ;;
         *)
-            safe_copy_dir "$dir" "$BOOT_PART/$dname"
+            safe_copy_dir "$dir" "$BOOT_PART" "$dname"
             ;;
     esac
 done

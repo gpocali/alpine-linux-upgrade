@@ -254,9 +254,22 @@ echo "Remounting boot partition as read-only..."
 sync
 mount -o remount,ro "$BOOT_PART" || true
 
-echo "Updating repositories to HTTPS and latest-stable..."
-sed -i 's|http://|https://|g' /etc/apk/repositories
+echo "Updating repositories to latest-stable..."
 sed -i -E 's|/v[0-9]+\.[0-9]+/|/latest-stable/|g' /etc/apk/repositories
+
+echo "Checking repository HTTPS availability..."
+HTTP_HOSTS=$(grep -E '^http://' /etc/apk/repositories 2>/dev/null | sed -E 's|http://([^/]+)/.*|\1|' | sort -u)
+
+for host in $HTTP_HOSTS; do
+    [ -z "$host" ] && continue
+    echo "  -> Testing HTTPS connectivity for $host..."
+    if wget -q --spider --timeout=5 "https://${host}/" 2>/dev/null || wget -qO- --timeout=5 "https://${host}/" >/dev/null 2>&1; then
+        echo "  -> HTTPS supported on $host. Updating repository entries to https://..."
+        sed -i "s|http://${host}|https://${host}|g" /etc/apk/repositories
+    else
+        echo "  -> Warning: HTTPS not available on $host. Retaining http:// for this repository."
+    fi
+done
 
 # Force the package manager to recognize the new architecture immediately on the next boot
 echo "$ARCH" > /etc/apk/arch

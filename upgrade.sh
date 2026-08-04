@@ -203,7 +203,7 @@ safe_copy_dir() {
         if [ "$CRON_MODE" = 1 ]; then
             (cd "$src" && tar -cf - .) | (cd "$dst" && tar -xf -)
         else
-            (cd "$src" && tar -cvf - .) | (cd "$dst" && tar -xf -) | awk -v name="$target_name" 'NR % 10 == 0 { printf "\r  -> Copying %s: %d files transferred...", name, NR } END { printf "\r  -> Copying %s: %d files completed.    \n", name, NR }'
+            ( (cd "$src" && tar -cf - .) | (cd "$dst" && tar -xvf -) ) 2>&1 | awk -v name="$target_name" 'NR % 10 == 0 { printf "\r  -> Copying %s: %d files transferred...", name, NR } END { printf "\r  -> Copying %s: %d files completed.    \n", name, NR }'
         fi
     fi
 }
@@ -251,6 +251,7 @@ echo "Cleaning up staging directory..."
 rm -rf "$STAGING_DIR"
 
 echo "Remounting boot partition as read-only..."
+sync
 mount -o remount,ro "$BOOT_PART" || true
 
 echo "Updating repositories to HTTPS and latest-stable..."

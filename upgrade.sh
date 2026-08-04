@@ -119,23 +119,46 @@ echo "Extracting ISO image on boot media..."
 EXTRACTED=0
 mkdir -p "$ISO_MOUNT"
 
+# Try loading loop kernel module first
+modprobe loop 2>/dev/null || true
+
+# 1. Attempt loop mount
 if mount -o loop "$ISO_FILE" "$ISO_MOUNT" 2>/dev/null; then
     (cd "$ISO_MOUNT" && tar -cf - .) | (cd "$EXTRACT_DIR" && tar -xf -) 2>/dev/null || true
-    umount "$ISO_MOUNT"
+    umount "$ISO_MOUNT" 2>/dev/null || true
     EXTRACTED=1
-elif command -v 7z >/dev/null 2>&1; then
-    7z x -o"$EXTRACT_DIR" "$ISO_FILE" >/dev/null && EXTRACTED=1
-elif command -v bsdtar >/dev/null 2>&1; then
-    bsdtar -xf "$ISO_FILE" -C "$EXTRACT_DIR" && EXTRACTED=1
-elif command -v xorriso >/dev/null 2>&1; then
-    xorriso -osirrox on -indev "$ISO_FILE" -extract / "$EXTRACT_DIR" >/dev/null 2>&1 && EXTRACTED=1
+fi
+
+# 2. Try pre-installed extraction utilities (7z / 7zz / bsdtar / xorriso)
+if [ "$EXTRACTED" -eq 0 ]; then
+    if command -v 7z >/dev/null 2>&1 || command -v 7zz >/dev/null 2>&1; then
+        SEVENZ=$(command -v 7z 2>/dev/null || command -v 7zz 2>/dev/null)
+        "$SEVENZ" x -o"$EXTRACT_DIR" "$ISO_FILE" >/dev/null && EXTRACTED=1
+    elif command -v bsdtar >/dev/null 2>&1; then
+        bsdtar -xf "$ISO_FILE" -C "$EXTRACT_DIR" && EXTRACTED=1
+    elif command -v xorriso >/dev/null 2>&1; then
+        xorriso -osirrox on -indev "$ISO_FILE" -extract / "$EXTRACT_DIR" >/dev/null 2>&1 && EXTRACTED=1
+    fi
+fi
+
+# 3. If loop mount & existing tools fail, automatically install extraction tool via apk
+if [ "$EXTRACTED" -eq 0 ]; then
+    echo "Loop mount failed and no extraction tool found. Auto-installing extraction tool..."
+    if apk add --no-cache 7zip >/dev/null 2>&1 || apk add --no-cache p7zip >/dev/null 2>&1 || apk add --no-cache xorriso >/dev/null 2>&1; then
+        if command -v 7z >/dev/null 2>&1 || command -v 7zz >/dev/null 2>&1; then
+            SEVENZ=$(command -v 7z 2>/dev/null || command -v 7zz 2>/dev/null)
+            "$SEVENZ" x -o"$EXTRACT_DIR" "$ISO_FILE" >/dev/null && EXTRACTED=1
+        elif command -v xorriso >/dev/null 2>&1; then
+            xorriso -osirrox on -indev "$ISO_FILE" -extract / "$EXTRACT_DIR" >/dev/null 2>&1 && EXTRACTED=1
+        fi
+    fi
 fi
 
 rm -rf "$ISO_MOUNT"
 rm -f "$ISO_FILE"
 
 if [ "$EXTRACTED" -eq 0 ]; then
-    echo "Error: Failed to extract ISO image. Neither loop mount nor extraction tool (7z, bsdtar, xorriso) succeeded."
+    echo "Error: Failed to extract ISO image. Neither loop mount nor extraction tools could be used."
     rm -rf "$STAGING_DIR"
     exit 1
 fi

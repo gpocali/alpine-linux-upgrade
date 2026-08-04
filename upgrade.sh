@@ -109,7 +109,11 @@ ISO_MOUNT="${STAGING_DIR}/iso_mnt"
 mkdir -p "$EXTRACT_DIR"
 
 echo "Downloading ${FILENAME} directly to boot media..."
-wget -qO "$ISO_FILE" "$DOWNLOAD_LINK"
+if [ "$CRON_MODE" = 1 ]; then
+    wget -qO "$ISO_FILE" "$DOWNLOAD_LINK"
+else
+    wget --show-progress -O "$ISO_FILE" "$DOWNLOAD_LINK" 2>/dev/null || wget -O "$ISO_FILE" "$DOWNLOAD_LINK"
+fi
 
 echo "Extracting ISO image on boot media..."
 EXTRACTED=0
@@ -165,7 +169,7 @@ find_dir_case() {
     fi
 }
 
-# Helper function to safely copy directory trees into existing destination directories using tar
+# Helper function to safely copy directory trees into existing destination directories using tar with progress indicator
 safe_copy_dir() {
     src="$1"
     parent="$2"
@@ -173,7 +177,11 @@ safe_copy_dir() {
     if [ -d "$src" ]; then
         dst=$(find_dir_case "$parent" "$target_name")
         [ -d "$dst" ] || mkdir -p "$dst"
-        (cd "$src" && tar -cf - .) | (cd "$dst" && tar -xf -)
+        if [ "$CRON_MODE" = 1 ]; then
+            (cd "$src" && tar -cf - .) | (cd "$dst" && tar -xf -)
+        else
+            (cd "$src" && tar -cvf - .) | (cd "$dst" && tar -xf -) | awk -v name="$target_name" 'NR % 10 == 0 { printf "\r  -> Copying %s: %d files transferred...", name, NR } END { printf "\r  -> Copying %s: %d files completed.    \n", name, NR }'
+        fi
     fi
 }
 
